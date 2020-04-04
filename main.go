@@ -18,6 +18,7 @@ import (
 	"io/ioutil"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/fatih/color"
 	"gopkg.in/yaml.v3"
@@ -43,7 +44,7 @@ func main() {
 	// TODO support multiple documents
 	content := v.Content[0]
 
-	colorizeKeys(content)
+	colorizeKeys(content, "$root")
 	colorizeComments(content)
 
 	var buf bytes.Buffer
@@ -72,25 +73,61 @@ func render(buf bytes.Buffer) string {
 	s := buf.String()
 
 	// render keys
-	re := regexp.MustCompile(`(?m)(KEY_)([^:]+)`)
-	s = re.ReplaceAllString(s, color.RedString(`$2$3`))
+
+	s = regexp.MustCompile(`(?m)(KEY_BLUE_)([^:]+)`).
+		ReplaceAllString(s, color.New(color.FgBlue, color.Bold).Sprint(`$2$3`))
+	s = regexp.MustCompile(`(?m)(KEY_YELLOW_)([^:]+)`).
+		ReplaceAllString(s, color.New(color.FgYellow, color.Bold).Sprint(`$2$3`))
+	s = regexp.MustCompile(`(?m)(KEY_RED_)([^:]+)`).
+		ReplaceAllString(s, color.New(color.FgRed, color.Bold).Sprint(`$2$3`))
 
 	// render comments
 	s = regexp.MustCompile(`(?m)#COMMENT_(.*)`).
-		ReplaceAllString(s, color.HiBlackString(`#$1`))
+		ReplaceAllString(s, color.New(color.FgHiBlack).Sprint(`#$1`))
 
 	return s
 }
 
-func colorizeKeys(node *yaml.Node) {
+func colorizeKeys(node *yaml.Node, path string) {
+	var prevKey string
 	for i, child := range node.Content {
 		if node.Kind == yaml.SequenceNode && child.Kind == yaml.ScalarNode {
 			continue
 		}
-		// key'ler 2'ye bolunuyor
+
 		if i%2 == 0 && child.Value != "" {
-			child.Value = "KEY_" + child.Value
+			keyPath := path + "." + child.Value
+			prevKey = child.Value
+			child.Value = "KEY_" + colorForKey(keyPath) + "_" + child.Value
 		}
-		colorizeKeys(child)
+
+		subPath := path
+		if node.Kind == yaml.MappingNode {
+			subPath = path + "." + prevKey
+		}
+		colorizeKeys(child, subPath)
 	}
+}
+
+func colorForKey(path string) string {
+	redSuffixes := []string{"$root.apiVersion",
+		"$root.kind",
+		"$root.metadata",
+		".spec",
+		".containers.name",
+		".containers.image"}
+	for _, f := range redSuffixes {
+		if strings.HasSuffix(path, f) {
+			return "RED"
+		}
+	}
+
+	if strings.HasPrefix(path, "$root.metadata") {
+		return "YELLOW"
+	}
+
+	if strings.HasPrefix(path, "$root.spec") {
+		return "BLUE"
+	}
+	return ""
 }
