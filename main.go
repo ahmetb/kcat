@@ -44,21 +44,42 @@ func main() {
 	content := v.Content[0]
 
 	colorizeKeys(content)
+	colorizeComments(content)
 
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 	enc.Encode(content)
-
 	fmt.Print(render(buf))
+}
+
+func markComments(in string) string {
+	re := regexp.MustCompile(`(?m)^#(.*)`)
+	return re.ReplaceAllString(in, `#COMMENT_$1`)
+}
+
+func colorizeComments(node *yaml.Node) {
+	for _, child := range node.Content {
+		child.HeadComment = markComments(child.HeadComment)
+		child.LineComment = markComments(child.LineComment)
+		child.FootComment = markComments(child.FootComment)
+
+		colorizeComments(child)
+	}
 }
 
 func render(buf bytes.Buffer) string {
 	s := buf.String()
 
+	// render keys
 	re := regexp.MustCompile(`(?m)(KEY_)([^:]+)`)
+	s = re.ReplaceAllString(s, color.RedString(`$2$3`))
 
-	return re.ReplaceAllString(s,  color.RedString(`$2$3`))
+	// render comments
+	s = regexp.MustCompile(`(?m)#COMMENT_(.*)`).
+		ReplaceAllString(s, color.HiBlackString(`#$1`))
+
+	return s
 }
 
 func colorizeKeys(node *yaml.Node) {
